@@ -31,3 +31,5 @@ Thumbs.db
 
 # Environment variables (kalau nanti ada API keys dsb)
 .env
+
+kaggle-notebook/
