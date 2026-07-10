@@ -1,0 +1,33 @@
+# Virtual environment
+venv/
+env/
+.venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Dataset (jangan commit file besar)
+data/raw/*.csv
+data/processed/*.csv
+
+# Model artifacts (bisa besar, hasil regenerasi dari train.py)
+models/*.pkl
+
+# Pytest cache
+.pytest_cache/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor/IDE
+.vscode/
+.idea/
+
+# Environment variables (kalau nanti ada API keys dsb)
+.env
