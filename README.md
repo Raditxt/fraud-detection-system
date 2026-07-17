@@ -16,6 +16,7 @@ Beyond classification, the project is being extended to treat fraud detection as
 - Evaluation focused on precision, recall, F1, and ROC-AUC — not accuracy, since accuracy is misleading here
 - **Risk scoring**: continuous fraud probability output instead of a fixed binary prediction, enabling downstream cost-based decisions
 - **Evidence-based cost framework**: quantifies the asymmetric cost of false negatives vs. false positives using values grounded in published industry and academic sources, not arbitrary assumptions
+- **Expected loss optimization**: identifies the decision threshold that minimizes total financial cost, not just maximizes F1
 - Modular, testable codebase with unit tests for preprocessing, prediction, risk scoring, and cost analysis
 
 ## Tech Stack
@@ -53,9 +54,15 @@ Standard classification metrics (precision, recall, F1) treat every false positi
 - FluxForce (2024), *False Positive Rates in Transaction Monitoring*, citing LexisNexis Risk Solutions' 2024 compliance cost survey of 1,000+ institutions — [source](https://www.fluxforce.ai/statistics/false-positive-rates-transaction-monitoring).
 - EAI Endorsed Transactions (2026), *Enhancing Credit Card Fraud Detection under Severe Class Imbalance using Cost-Sensitive Learning and Threshold Optimization* — a benchmark study using this same dataset, reducing false positives from 21 to 13 via threshold optimization ([source](https://publications.eai.eu/index.php/ismla/article/view/12078)).
 
-**Planned next steps:** expected-loss calculation across all thresholds, threshold optimization to minimize total cost (not just maximize F1), and a 3-tier decision layer (approve / manual review / block).
+**Result:** Optimizing for expected loss instead of F1 shifts the optimal decision threshold from the default 0.5 down to 0.21 — the system becomes more aggressive about flagging fraud, since missing fraud is ~4.3x costlier than a false alarm. This trade-off (11 missed fraud vs. 19, at the cost of 28 false alarms vs. 7) reduces total expected loss by 15.4% ($2,238.81 → $1,894.84) compared to the default threshold.
+
+**Completed:** risk scoring, evidence-based cost framework, and expected loss optimization across thresholds (see `src/expected_loss.py`).
+
+**Planned next steps:** a 3-tier decision layer (approve / manual review / block) built on top of the optimal threshold, and a full-dataset simulation quantifying total cost impact if this system were deployed.
 
 ## Project Structure
+
+```
 fraud-detection-system/
 ├── data/               # raw and processed datasets (not committed)
 ├── notebooks/          # exploratory data analysis
@@ -66,46 +73,55 @@ fraud-detection-system/
 │   ├── evaluate.py
 │   ├── predict.py
 │   ├── risk_scoring.py
-│   └── cost_analysis.py
+│   ├── cost_analysis.py
+│   └── expected_loss.py
 ├── models/             # saved model artifacts (not committed)
 ├── tests/              # unit tests
 └── app.py              # optional demo interface
+```
 
 ## How to Run
 
 1. **Clone the repository**
+
 ```bash
-   git clone https://github.com/Raditxt/fraud-detection-system.git
-   cd fraud-detection-system
+git clone https://github.com/Raditxt/fraud-detection-system.git
+cd fraud-detection-system
 ```
 
 2. **Set up a virtual environment**
+
 ```bash
-   python -m venv venv
-   venv\Scripts\activate      # Windows
-   source venv/bin/activate   # macOS/Linux
+python -m venv venv
+venv\Scripts\activate      # Windows
+source venv/bin/activate   # macOS/Linux
 ```
 
 3. **Install dependencies**
+
 ```bash
-   pip install -r requirements.txt
+pip install -r requirements.txt
 ```
 
 4. **Download the dataset**
-   Get `creditcard.csv` from [Kaggle: Credit Card Fraud Detection](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud) and place it in `data/raw/`.
+
+Get `creditcard.csv` from [Kaggle: Credit Card Fraud Detection](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud) and place it in `data/raw/`.
 
 5. **Run the pipeline**
+
 ```bash
-   python -m src.train             # trains and saves both models
-   python -m src.evaluate          # prints precision/recall/F1/ROC-AUC for both models
-   python -m src.predict           # runs a sample prediction
-   python -m src.risk_scoring      # shows risk score distribution by class
-   python -m src.cost_analysis     # prints the cost matrix (FN vs. FP)
+python -m src.train             # trains and saves both models
+python -m src.evaluate          # prints precision/recall/F1/ROC-AUC for both models
+python -m src.predict           # runs a sample prediction
+python -m src.risk_scoring      # shows risk score distribution by class
+python -m src.cost_analysis     # prints the cost matrix (FN vs. FP)
+python -m src.expected_loss     # finds the cost-minimizing threshold
 ```
 
 6. **Run tests**
+
 ```bash
-   python -m pytest tests/ -v
+python -m pytest tests/ -v
 ```
 
 ## Challenges & Learnings
@@ -117,8 +133,6 @@ fraud-detection-system/
 
 ## Future Improvements
 
-- Calculate expected loss across all decision thresholds and identify the cost-minimizing threshold (not just the F1-maximizing one)
-- Implement a 3-tier decision layer: low risk → approve, medium risk → manual review, high risk → block
 - Simulate the decision system across the full test set to quantify total cost reduction vs. the default 0.5 threshold baseline
 - Add SHAP-based interpretability to explain individual fraud predictions
 - Add a simple Streamlit demo (`app.py`) to interactively test transactions
