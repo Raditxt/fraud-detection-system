@@ -37,7 +37,10 @@ class DecisionTierResult:
 
 
 def find_block_threshold(
-    y_true: pd.Series, risk_scores: pd.Series, min_precision: float = 0.95
+    y_true: pd.Series,
+    risk_scores: pd.Series,
+    min_precision: float = 0.95,
+    min_threshold: float = 0.50,
 ) -> float:
     """Find the lowest threshold at which precision meets a target level.
 
@@ -48,19 +51,30 @@ def find_block_threshold(
         y_true: Ground truth labels.
         risk_scores: Predicted fraud probabilities.
         min_precision: Minimum acceptable precision for auto-blocking.
+        min_threshold: Lower bound to start scanning from. Used to guarantee
+            the returned threshold exceeds a given review_threshold, since
+            some models (e.g. low-precision ones) may never reach
+            min_precision, in which case the fallback must still be valid.
 
     Returns:
-        The lowest threshold satisfying the precision target. Falls back
-        to 0.99 if no threshold achieves the target precision.
+        The lowest threshold satisfying the precision target, or a safe
+        fallback strictly greater than min_threshold if no threshold
+        reaches the target (this happens for models with weak precision,
+        such as Logistic Regression on this dataset).
     """
-    for threshold in np.arange(0.50, 1.00, 0.01):
+    start = max(min_threshold, 0.50)
+    for threshold in np.arange(start, 1.00, 0.01):
         y_pred = (risk_scores >= threshold).astype(int)
         if y_pred.sum() == 0:
             continue
         precision = precision_score(y_true, y_pred, zero_division=0)
         if precision >= min_precision:
             return round(threshold, 2)
-    return 0.99
+
+    # No threshold reached target precision (common for weak models).
+    # Fall back to a value guaranteed to exceed min_threshold.
+    fallback = min(0.9999, start + 0.011)
+    return round(fallback, 4)
 
 
 def assign_risk_tier(

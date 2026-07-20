@@ -5,6 +5,7 @@ from pathlib import Path
 import joblib
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
+from xgboost import XGBClassifier  # tambahan
 
 from src.data_loader import load_raw_data
 from src.preprocessing import prepare_features, split_features_and_target
@@ -53,6 +54,36 @@ def train_random_forest(X_train, y_train, random_state: int = 42) -> RandomFores
     return model
 
 
+def train_xgboost(X_train, y_train, random_state: int = 42) -> XGBClassifier:
+    """Train an XGBoost classifier with class balancing.
+
+    Uses scale_pos_weight instead of class_weight (XGBoost's API differs
+    from scikit-learn's), computed as the ratio of negative to positive
+    class counts to achieve equivalent balancing.
+
+    Args:
+        X_train: Training features.
+        y_train: Training labels.
+        random_state: Seed for reproducibility.
+
+    Returns:
+        Trained XGBClassifier model.
+    """
+    neg_count = (y_train == 0).sum()
+    pos_count = (y_train == 1).sum()
+    scale_pos_weight = neg_count / pos_count
+
+    model = XGBClassifier(
+        n_estimators=100,
+        scale_pos_weight=scale_pos_weight,
+        random_state=random_state,
+        eval_metric="logloss",
+        n_jobs=-1,
+    )
+    model.fit(X_train, y_train)
+    return model
+
+
 def save_model(model, filename: str) -> Path:
     """Save a trained model to the models/ directory.
 
@@ -87,6 +118,11 @@ def run_training_pipeline():
     rf = train_random_forest(X_train, y_train)
     save_model(rf, "random_forest.pkl")
     print("Saved to models/random_forest.pkl")
+
+    print("\nTraining XGBoost...")
+    xgb = train_xgboost(X_train, y_train)
+    save_model(xgb, "xgboost.pkl")
+    print("Saved to models/xgboost.pkl")
 
     # Save the test set too, so evaluate.py can reuse the exact same split
     save_model((X_test, y_test), "test_set.pkl")

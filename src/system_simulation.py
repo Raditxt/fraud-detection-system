@@ -101,6 +101,37 @@ def compute_do_nothing_baseline(y_true: pd.Series, amounts: pd.Series) -> System
     )
 
 
+def simulate_model_cost(model, X_test, y_test, amounts, cost_matrix, label: str) -> "SystemCostResult":
+    """Run the full pipeline (risk scoring -> threshold optimization ->
+    3-tier decision) for a given model and return its total system cost.
+
+    Args:
+        model: Trained classifier with a predict_proba method.
+        X_test: Test features.
+        y_test: Test labels.
+        amounts: Original dollar amounts, aligned to y_test's index.
+        cost_matrix: CostMatrix with cost_fp and avg_fn_cost.
+        label: Name for this model, used in the result summary.
+
+    Returns:
+        SystemCostResult for this model's optimized 3-tier system.
+    """
+    from src.decision_layer import assign_risk_tier, find_block_threshold
+    from src.expected_loss import compute_loss_curve
+    from src.risk_scoring import score_transactions
+
+    risk_scores = score_transactions(model, X_test)
+
+    loss_curve = compute_loss_curve(y_test, risk_scores, cost_matrix)
+    review_threshold = loss_curve.loc[loss_curve["expected_loss"].idxmin(), "threshold"]
+    block_threshold = find_block_threshold(
+        y_test, risk_scores, min_precision=0.95, min_threshold=review_threshold + 0.01
+    )
+
+    tiers = assign_risk_tier(risk_scores, review_threshold, block_threshold)
+    return compute_tier_system_cost(y_test, tiers, amounts, label=label)
+
+
 if __name__ == "__main__":
     import joblib
 

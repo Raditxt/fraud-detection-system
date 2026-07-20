@@ -4,7 +4,7 @@ A machine learning pipeline that detects fraudulent credit card transactions fro
 
 ## Project Goal
 
-Credit card fraud is rare — in this dataset, only 0.17% of transactions are fraudulent (492 out of 284,807). A naive model can hit 99.8% accuracy by simply predicting "not fraud" every time, which makes this a genuinely hard imbalanced classification problem. This project builds, evaluates, and compares two models to detect fraud while managing the trade-off between **recall** (catching actual fraud) and **precision** (avoiding false alarms).
+Credit card fraud is rare — in this dataset, only 0.17% of transactions are fraudulent (492 out of 284,807). A naive model can hit 99.8% accuracy by simply predicting "not fraud" every time, which makes this a genuinely hard imbalanced classification problem. This project builds, evaluates, and compares multiple models to detect fraud while managing the trade-off between **recall** (catching actual fraud) and **precision** (avoiding false alarms).
 
 Beyond classification, the project extends into treating fraud detection as an **economic decision system** — since in production, a missed fraud, a false alarm sent to review, and a legitimate transaction wrongly blocked all carry very different real-world costs. The system computes fraud risk, assigns transactions to a 3-tier decision (approve / review / block), and simulates the total dollar cost of running it end-to-end.
 
@@ -12,13 +12,13 @@ Beyond classification, the project extends into treating fraud detection as an *
 
 - End-to-end pipeline: data loading → preprocessing → training → evaluation → prediction
 - Handles severe class imbalance using `class_weight="balanced"`
-- Compares two models (Logistic Regression vs. Random Forest) with a clear precision/recall trade-off analysis
+- Compares three models (Logistic Regression, Random Forest, XGBoost) with a clear precision/recall trade-off analysis
 - Evaluation focused on precision, recall, F1, and ROC-AUC — not accuracy, since accuracy is misleading here
 - **Risk scoring**: continuous fraud probability output instead of a fixed binary prediction, enabling downstream cost-based decisions
 - **Evidence-based cost framework**: quantifies the asymmetric cost of false negatives vs. false positives using values grounded in published industry and academic sources, not arbitrary assumptions
 - **Expected loss optimization**: identifies the decision threshold that minimizes total financial cost, not just maximizes F1
 - **3-tier decision layer**: approve / manual review / block, reducing manual review workload to a small fraction of transactions
-- **End-to-end system simulation**: quantifies total dollar cost and savings versus a no-detection baseline
+- **End-to-end system simulation**: quantifies total dollar cost and savings versus a no-detection baseline, run independently across all three models for a fair cost-based comparison
 - Modular, testable codebase (29 unit tests) covering preprocessing, prediction, risk scoring, cost analysis, expected loss, decision tiers, and system simulation
 
 ## Tech Stack
@@ -26,6 +26,7 @@ Beyond classification, the project extends into treating fraud detection as an *
 - **Python 3.11+**
 - **pandas** / **numpy** — data manipulation
 - **scikit-learn** — modeling and evaluation
+- **XGBoost** — final production model
 - **joblib** — model persistence
 - **pytest** — unit testing
 
@@ -36,7 +37,7 @@ Beyond classification, the project extends into treating fraud detection as an *
 | Logistic Regression | 0.06               | 0.92            | 0.11       | 0.9722  |
 | Random Forest       | 0.92               | 0.81            | 0.86       | 0.9518  |
 
-**Takeaway:** Logistic Regression catches more fraud (92% recall) but generates a large number of false positives (1,389 normal transactions flagged), which would be costly to review manually. Random Forest is far more precise (92%) with only 7 false positives, making it more practical for real-world deployment — at the cost of missing slightly more fraud cases (19 vs. 8 missed). Random Forest is used as the base model for the cost-sensitive extension below.
+**Takeaway:** Logistic Regression catches more fraud (92% recall) but generates a large number of false positives (1,389 normal transactions flagged), which would be costly to review manually. Random Forest is far more precise (92%) with only 7 false positives, making it more practical for real-world deployment — at the cost of missing slightly more fraud cases (19 vs. 8 missed). Random Forest was initially used as the base model for the cost-sensitive extension below; see the **model comparison by total system cost** section for why XGBoost was ultimately adopted as the final model instead.
 
 **Risk score separation:** Random Forest's predicted probabilities separate the two classes clearly — normal transactions average a risk score of 0.0009, while fraud transactions average 0.77 (median 0.94). This confirms the model has strong discriminative power, which the threshold optimization work below relies on.
 
@@ -85,6 +86,20 @@ To answer the practical question — "if this system were deployed, what's the d
 - False-block loss uses the transaction's own dollar amount as a conservative cost floor. Published research suggests the real-world cost of false declines is substantially higher once lost customer lifetime value is included — merchants report losing $30-75 for every $1 of fraud prevented, due to customers who don't return after a false decline ([Aite Group, 2019, cited by INETCO](https://www.inetco.com/why-false-declines-cost-you-more-than-fraud-and-what-to-do-about-it/); [Corgi Labs, 2026](https://dev.corgilabs.ai/insights/false-declines), citing Merchant Risk Council 2024). This project deliberately does not apply that multiplier, since it was measured in an e-commerce checkout context that may not transfer directly to this dataset — the reported figure is a conservative lower bound, not the full real-world cost.
 - **Limitation:** the 4 false-blocked transactions in this test set happened to be low-value ($2.76 total), which kept false-block loss minimal. This reflects this specific test split, not evidence that the system optimizes for transaction value — the block threshold is chosen purely on precision, with no awareness of dollar amount.
 
+### Model comparison by total system cost
+
+The same cost-sensitive pipeline (risk scoring → expected loss optimization → 3-tier decision) was run independently for all three models, to test whether higher classification metrics (F1, recall) actually translate into lower financial cost.
+
+| Model | Missed Fraud Loss | Review Cost | False-Block Loss | **Total Cost** | vs. Baseline |
+|---|---|---|---|---|---|
+| Logistic Regression | $1,832.72 | $850.00 | $27,603.15 | **$30,285.87** | **-184.5%** (worse than no detection) |
+| Random Forest | $1,826.50 | $900.00 | $2.76 | **$2,729.26** | +74.4% |
+| **XGBoost** | $1,942.10 | $375.00 | $2.77 | **$2,319.87** | **+78.2% (best)** |
+
+**Key finding:** Logistic Regression — despite having the highest fraud recall (92%) among all three models — produces a system that is financially *worse than having no fraud detection at all*. Its low precision (0.06) means the model cannot reliably distinguish fraud from normal transactions at any confidence level, so the auto-block tier ends up rejecting a large volume of legitimate transactions ($27,603 in false-block losses alone). This is direct, quantified evidence that **classification metrics and business outcomes are not the same thing** — a model can look strong on recall and still be unusable in a cost-sensitive deployment.
+
+XGBoost outperforms Random Forest by $409.39 (15% lower total cost), primarily by requiring less manual review ($375 vs. $900) while maintaining comparably low false-block losses. XGBoost is adopted as the final model for this reason — not because of its F1 or ROC-AUC, but because it minimizes total deployment cost.
+
 ### Sources informing this approach
 
 - Chen et al. (2026), *A Regulatory Governance Framework for AI-Driven Financial Fraud Detection in U.S. Banking*, [arXiv:2605.04076](https://arxiv.org/pdf/2605.04076) — net-savings formula using empirical transaction value rather than assumed flat costs.
@@ -94,6 +109,8 @@ To answer the practical question — "if this system were deployed, what's the d
 - INETCO / Corgi Labs (2019-2026) — false decline cost research, cited above.
 
 ## Project Structure
+
+```
 fraud-detection-system/
 ├── data/                    # raw and processed datasets (not committed)
 ├── notebooks/               # exploratory data analysis
@@ -111,6 +128,7 @@ fraud-detection-system/
 ├── models/                  # saved model artifacts (not committed)
 ├── tests/                   # unit tests (29 tests)
 └── app.py                   # optional demo interface
+```
 
 ## How to Run
 
@@ -142,14 +160,14 @@ Get `creditcard.csv` from [Kaggle: Credit Card Fraud Detection](https://www.kagg
 5. **Run the pipeline**
 
 ```bash
-python -m src.train                # trains and saves both models
-python -m src.evaluate              # prints precision/recall/F1/ROC-AUC for both models
+python -m src.train                # trains and saves all models
+python -m src.evaluate              # prints precision/recall/F1/ROC-AUC for all models
 python -m src.predict               # runs a sample prediction
 python -m src.risk_scoring          # shows risk score distribution by class
 python -m src.cost_analysis         # prints the cost matrix (FN vs. FP)
 python -m src.expected_loss         # finds the cost-minimizing threshold
 python -m src.decision_layer        # builds the 3-tier approve/review/block system
-python -m src.system_simulation     # simulates full pipeline cost vs. no-detection baseline
+python -m src.system_simulation     # simulates full pipeline cost vs. no-detection baseline, per model
 ```
 
 6. **Run tests**
@@ -166,11 +184,11 @@ python -m pytest tests/ -v
 - **Metrics alone don't make decisions**: precision and recall describe model behavior, but they don't say what to *do* about it. Building the cost framework required grounding assumptions in real industry data rather than picking arbitrary cost values, since arbitrary costs would make any resulting "optimal threshold" meaningless.
 - **A single threshold is still a blunt instrument**: even a cost-optimal threshold forces a binary decision. Moving to a 3-tier system (approve/review/block) cut manual review workload to 0.06% of transactions while keeping the same fraud-catch rate — a meaningfully different (and more deployable) design than "pick one cutoff."
 - **Not every cost is the same type of cost**: missed fraud, review labor, and false declines are economically different (lost money vs. labor cost vs. lost revenue/goodwill). Modeling them as three separate cost components, instead of collapsing everything into one FP/FN cost, produced a more honest picture — and surfaced a real gap (false-block cost) that a simpler two-cost model would have ignored entirely.
+- **Classification metrics can be actively misleading in a cost-sensitive system**: Logistic Regression's high recall looked like the strongest result on paper, but running the full cost simulation revealed it was worse than deploying nothing at all. Total system cost — not F1 or ROC-AUC — is the metric that should drive model selection.
 
 ## Future Improvements
 
-- Add SHAP-based interpretability to explain individual fraud predictions
+- Add SHAP-based interpretability to explain individual fraud predictions from the final XGBoost model
 - Stress-test the system against synthetic shifts in fraud ratio and feature noise to check robustness
 - Add a simple Streamlit demo (`app.py`) to interactively score transactions and see the tier assigned
-- Try gradient boosting models (XGBoost/LightGBM), evaluated by total system cost rather than accuracy or F1 alone
 - Explore a more granular false-block cost model incorporating customer lifetime value, following the false-decline literature cited above
