@@ -120,6 +120,32 @@ Because `V1`‑`V28` are PCA‑transformed for privacy, their real‑world meani
 
 **Example: explaining a single fraud transaction.** For the highest‑risk transaction in the sample (correctly identified as fraud), `V14 = -3.84` was the largest single contributor to its fraud score (SHAP value +5.70), followed by `V4 = 7.04` (+2.22) and `V10 = -20.95` (+2.09). This is the kind of transaction‑level explanation a fraud analyst or auditor would need — not just "the model said fraud," but which specific signals drove that call and how strongly.
 
+### Robustness (Exploratory Stress Testing)
+
+Unlike the cost framework above, no external quantitative benchmark was found for "realistic" fraud‑ratio drift or feature noise levels in production systems — these tests are exploratory robustness checks against this specific model and dataset, not validated against industry research.
+
+**Feature noise injection** (Gaussian noise scaled to each feature's own standard deviation, threshold held fixed at 0.21):
+
+| Noise Level | Precision | Recall |
+|---|---|---|
+| Baseline (no noise) | 0.847 | 0.847 |
+| 5% of feature std | 0.848 | 0.857 |
+| 10% of feature std | 0.865 | 0.847 |
+| 25% of feature std | 0.794 | 0.827 |
+
+The model degrades gracefully under noise rather than collapsing — even at 25% noise, precision drops only 6 percentage points from baseline. This suggests the model isn't relying on brittle, easily‑perturbed feature interactions.
+
+**Fraud‑ratio resampling** (downsampling normal transactions while keeping all fraud cases, to test how metrics respond to a lower/higher fraud prevalence):
+
+| Fraud Ratio | Precision | Recall |
+|---|---|---|
+| Baseline (0.17%) | 0.847 | 0.847 |
+| 1% | 0.976 | 0.847 |
+| 5% | 1.000 | 0.847 |
+| 30% | 1.000 | 0.847 |
+
+**Important caveat:** recall stays constant here by construction — since resampling only removes normal transactions and keeps every fraud case unchanged, the model sees the identical set of fraud transactions at every ratio. This demonstrates the base‑rate effect on precision (precision rises as normal transactions become relatively rarer), not evidence that the model generalizes to new or different fraud patterns. A genuine test of robustness to concept drift would require fraud examples the model hasn't seen, which this dataset's single time window doesn't provide.
+
 ### Sources informing this approach
 
 - Chen et al. (2026), *A Regulatory Governance Framework for AI‑Driven Financial Fraud Detection in U.S. Banking*, [arXiv:2605.04076](https://arxiv.org/pdf/2605.04076) — net‑savings formula using empirical transaction value rather than assumed flat costs.
@@ -212,6 +238,6 @@ python -m pytest tests/ -v
 
 ## Future Improvements
 
-- Stress‑test the system against synthetic shifts in fraud ratio and feature noise to check robustness
 - Add a simple Streamlit demo (`app.py`) to interactively score transactions and see the tier assigned, along with its SHAP explanation
 - Explore a more granular false‑block cost model incorporating customer lifetime value, following the false‑decline literature cited above
+- Test true concept drift robustness using a dataset with multiple time periods, since this dataset's single 2‑day window limits how meaningfully fraud‑pattern drift can be simulated
